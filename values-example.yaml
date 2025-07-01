@@ -1,0 +1,103 @@
+# Example values file for MinIO with Data Science buckets configuration
+# Copy this file and customize for your environment
+
+# MinIO Authentication
+auth:
+  rootUser: "admin"
+  rootPassword: "SecurePassword123!"
+
+# Resources for production
+resources:
+  requests:
+    memory: "1Gi"
+    cpu: "500m"
+  limits:
+    memory: "4Gi"
+    cpu: "2000m"
+
+# Persistence
+persistence:
+  enabled: true
+  size: 100Gi
+  storageClass: "gp3-csi"  # Adjust for your OpenShift storage class
+
+# OpenShift Route - Let OpenShift auto-generate hostnames
+route:
+  enabled: true
+  host: ""  # Leave empty for auto-generated: minio-api-<namespace>.apps.<cluster-domain>
+  consoleHost: ""  # Leave empty for auto-generated: minio-console-<namespace>.apps.<cluster-domain>
+  # Optionally specify custom hostnames:
+  # host: "minio-api.apps.your-cluster.com"
+  # consoleHost: "minio-console.apps.your-cluster.com"
+  tls:
+    enabled: true
+    termination: edge
+
+# Enable console
+console:
+  enabled: true
+
+# Bucket configuration for Data Science workflows
+buckets:
+  enabled: true
+  list:
+    # Raw data ingestion bucket
+    - name: "raw-data"
+      policy: "upload"  # Only allow uploads, not public downloads
+      versioning: true  # Keep versions for data lineage
+      notifications:
+        enabled: true
+        events: ["put"]  # Trigger on new files
+        webhook:
+          endpoint: "http://webhook-handler.openshift-ai.svc.cluster.local:8080/minio-webhook"
+          authToken: "your-webhook-auth-token"
+        pipeline:
+          name: "data-ingestion-pipeline"
+          namespace: "openshift-ai"
+    
+    # Processed data bucket
+    - name: "processed-data"
+      policy: "download"  # Allow public downloads of processed data
+      versioning: true
+      notifications:
+        enabled: true
+        events: ["put"]
+        webhook:
+          endpoint: "http://webhook-handler.openshift-ai.svc.cluster.local:8080/minio-webhook"
+          authToken: "your-webhook-auth-token"
+        pipeline:
+          name: "data-processing-pipeline"
+          namespace: "openshift-ai"
+    
+    # Model artifacts bucket
+    - name: "model-artifacts"
+      policy: "none"  # Private access only
+      versioning: true
+      notifications:
+        enabled: true
+        events: ["put", "delete"]
+        webhook:
+          endpoint: "http://webhook-handler.openshift-ai.svc.cluster.local:8080/minio-webhook"
+          authToken: "your-webhook-auth-token"
+        pipeline:
+          name: "model-deployment-pipeline"
+          namespace: "openshift-ai"
+    
+    # Public datasets bucket
+    - name: "public-datasets"
+      policy: "public"  # Full public access
+      versioning: false
+      notifications:
+        enabled: false
+
+# Common labels for all resources
+commonLabels:
+  environment: "production"
+  team: "data-science"
+  project: "ml-platform"
+
+# Security context for OpenShift - Let OpenShift assign UIDs automatically
+securityContext:
+  runAsNonRoot: true
+  # OpenShift will automatically assign runAsUser and fsGroup within allowed ranges
+  # Do not specify runAsUser, runAsGroup, or fsGroup for better OpenShift compatibility

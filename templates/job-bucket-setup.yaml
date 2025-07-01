@@ -1,0 +1,170 @@
+{{- if .Values.buckets.enabled }}
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ include "minio.fullname" . }}-bucket-setup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "minio.labels" . | nindent 4 }}
+    app.kubernetes.io/component: bucket-setup
+    {{- with .Values.commonLabels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+  annotations:
+    "helm.sh/hook": post-install,post-upgrade
+    "helm.sh/hook-weight": "1"
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+    {{- with .Values.commonAnnotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  backoffLimit: 0
+  template:
+    metadata:
+      labels:
+        {{- include "minio.selectorLabels" . | nindent 8 }}
+        app.kubernetes.io/component: bucket-setup
+    spec:
+      serviceAccountName: {{ include "minio.serviceAccountName" . }}
+      restartPolicy: Never
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: bucket-setup
+          image: "{{ .Values.mcImage.repository }}:{{ .Values.mcImage.tag }}"
+          imagePullPolicy: {{ .Values.mcImage.pullPolicy }}
+          securityContext:
+            runAsNonRoot: true
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: false
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: MINIO_ROOT_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "minio.secretName" . }}
+                  key: root-user
+            - name: MINIO_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "minio.secretName" . }}
+                  key: root-password
+            - name: MINIO_SERVICE_URL
+              value: "http://{{ include "minio.fullname" . }}.{{ .Release.Namespace }}.svc.cluster.local:{{ .Values.service.port }}"
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              echo "Starting bucket configuration job..."
+              echo "MinIO Service URL: ${MINIO_SERVICE_URL}"
+              echo "MinIO Root User: ${MINIO_ROOT_USER}"
+              
+              # Wait for MinIO service to be available with simpler approach
+              echo "Waiting for MinIO service to be ready..."
+              RETRY_COUNT=0
+              MAX_RETRIES=15
+              
+              while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+                echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES: Configuring alias and testing connection..."
+                
+                # Try to set alias and ping
+                if mc alias set minio ${MINIO_SERVICE_URL} ${MINIO_ROOT_USER} ${MINIO_ROOT_PASSWORD} 2>/dev/null && \
+                   mc ping minio --count 1 >/dev/null 2>&1; then
+                  echo "Successfully connected to MinIO!"
+                  break
+                fi
+                
+                echo "Connection failed, retrying in 5 seconds..."
+                sleep 5
+                RETRY_COUNT=$((RETRY_COUNT + 1))
+              done
+              
+              if [ $RETRY_COUNT -eq $MAX_RETRIES ]; then
+                echo "ERROR: Could not connect to MinIO after $MAX_RETRIES attempts"
+                echo "Service URL: ${MINIO_SERVICE_URL}"
+                echo ""
+                echo "=========================================="
+                echo "MANUAL CONFIGURATION REQUIRED"
+                echo "=========================================="
+                echo "The bucket setup job could not automatically configure your buckets."
+                echo ""
+                echo "Connect to MinIO using:"
+                echo "  mc alias set minio ${MINIO_SERVICE_URL} ${MINIO_ROOT_USER} <password>"
+                echo ""
+                echo "Required buckets to create:"
+                {{- range .Values.buckets.list }}
+                echo "  • {{ .name }}"
+                {{- if .policy }}
+                echo "    - Policy: {{ .policy }}"
+                {{- end }}
+                {{- if .versioning }}
+                echo "    - Versioning: enabled"
+                {{- end }}
+                {{- if and .notifications .notifications.enabled }}
+                echo "    - Notifications: {{ join "," .notifications.events }} events"
+                {{- if .notifications.webhook }}
+                echo "    - Webhook endpoint: {{ .notifications.webhook.endpoint }}"
+                {{- end }}
+                {{- if .notifications.pipeline }}
+                echo "    - Target pipeline: {{ .notifications.pipeline.name }} ({{ .notifications.pipeline.namespace }})"
+                {{- end }}
+                {{- end }}
+                {{- end }}
+                echo ""
+                echo "=========================================="
+                exit 1
+              fi
+              
+              echo "MinIO is ready! Configuring buckets..."
+              
+              {{- range .Values.buckets.list }}
+              echo "Processing bucket: {{ .name }}"
+              
+              # Create bucket if it doesn't exist
+              if ! mc ls minio/{{ .name }} >/dev/null 2>&1; then
+                echo "Creating bucket: {{ .name }}"
+                mc mb minio/{{ .name }}
+              else
+                echo "Bucket {{ .name }} already exists"
+              fi
+              
+              {{- if .versioning }}
+              echo "Enabling versioning for bucket: {{ .name }}"
+              mc version enable minio/{{ .name }}
+              {{- end }}
+              
+              {{- if .policy }}
+              {{- if eq .policy "download" }}
+              echo "Setting download policy for bucket: {{ .name }}"
+              mc anonymous set download minio/{{ .name }}
+              {{- else if eq .policy "upload" }}
+              echo "Setting upload policy for bucket: {{ .name }}"
+              mc anonymous set upload minio/{{ .name }}
+              {{- else if eq .policy "public" }}
+              echo "Setting public policy for bucket: {{ .name }}"
+              mc anonymous set public minio/{{ .name }}
+              {{- else if eq .policy "custom" }}
+              {{- if .customPolicy }}
+              echo "Applying custom policy for bucket: {{ .name }}"
+              echo '{{ .customPolicy | toJson }}' > /tmp/policy-{{ .name }}.json
+              mc admin policy create minio {{ .name }}-policy /tmp/policy-{{ .name }}.json
+              {{- end }}
+              {{- end }}
+              {{- end }}
+              
+              {{- if and .notifications .notifications.enabled }}
+              echo "Configuring notifications for bucket: {{ .name }}"
+              {{- if .notifications.webhook }}
+              {{- $events := join "," .notifications.events }}
+              mc event add minio/{{ .name }} arn:minio:sqs::primary:webhook --event "{{ $events }}" || echo "Warning: Could not configure webhook for {{ .name }}"
+              {{- end }}
+              {{- end }}
+              
+              echo "Bucket {{ .name }} configured successfully!"
+              {{- end }}
+              
+              echo "All buckets configured successfully!"
+{{- end }}

@@ -1,0 +1,20 @@
+apiVersion: v2
+name: minio
+description: A Helm chart for MinIO deployment on OpenShift with bucket configuration
+type: application
+version: 0.1.0
+appVersion: "latest"
+keywords:
+  - minio
+  - object-storage
+  - s3
+  - openshift
+  - data-science
+home: https://github.com/pkstaz/minio-helm
+sources:
+  - https://github.com/pkstaz/minio-helm
+  - https://github.com/minio/minio
+maintainers:
+  - name: Carlos Estay
+    email: cestay@redhat.com
+    url: https://github.com/pkstaz

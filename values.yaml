@@ -1,0 +1,108 @@
+# Default values for minio.
+# This is a YAML-formatted file.
+
+# Image configuration
+image:
+  repository: quay.io/minio/minio
+  tag: "latest"
+  pullPolicy: Always
+
+# MinIO authentication
+auth:
+  rootUser: minio
+  rootPassword: minio123
+  existingSecret: ""  # Use existing secret instead
+
+# Deployment mode
+mode: standalone  # standalone or distributed
+replicaCount: 1   # Only used in distributed mode
+
+# Service Account
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+# Security Context for OpenShift
+securityContext:
+  runAsNonRoot: true
+  # Let OpenShift assign the user ID automatically within the allowed range
+  # runAsUser and fsGroup will be assigned by OpenShift SCC
+
+# Service configuration
+service:
+  type: ClusterIP
+  port: 9000
+  consolePort: 9090
+
+# OpenShift Route configuration
+route:
+  enabled: true
+  host: ""  # Leave empty for auto-generated hostname by OpenShift
+  consoleHost: ""  # Leave empty for auto-generated console hostname
+  tls:
+    enabled: true
+    termination: edge
+
+# Resource limits and requests
+resources:
+  requests:
+    memory: "512Mi"
+    cpu: "250m"
+  limits:
+    memory: "2Gi"
+    cpu: "1000m"
+
+# Persistence configuration
+persistence:
+  enabled: true
+  size: 10Gi
+  storageClass: ""  # Use default storage class
+  accessModes:
+    - ReadWriteOnce
+
+# MinIO Console
+console:
+  enabled: true
+
+# Health checks
+livenessProbe:
+  enabled: true
+  initialDelaySeconds: 60
+  periodSeconds: 30
+  timeoutSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  enabled: true
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+# Bucket configuration
+buckets:
+  enabled: false
+  list:
+    - name: "test-bucket"
+      policy: "upload"
+      versioning: true
+      notifications:
+        enabled: true
+        events: ["put"]
+        webhook:
+          endpoint: "http://webhook-handler.default.svc.cluster.local:8080/minio-webhook"
+          authToken: "secret-token-123"
+        pipeline:
+          name: "data-ingestion-pipeline"
+          namespace: "openshift-ai"
+
+# Common labels and annotations
+commonLabels: {}
+commonAnnotations: {}
+
+# MinIO Client (mc) image for bucket setup job
+mcImage:
+  repository: quay.io/minio/mc
+  tag: "latest"
+  pullPolicy: Always
