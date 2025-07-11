@@ -71,3 +71,25 @@ Create the name of the secret to use
 {{- include "minio.fullname" . }}-auth
 {{- end }}
 {{- end }}
+
+{{/*
+Generate the route hostname for API
+*/}}
+{{- define "minio.routeHost" -}}
+{{- if .Values.route.host }}
+{{- .Values.route.host }}
+{{- else }}
+{{- printf "%s-api" (include "minio.fullname" .) }}
+{{- end }}
+{{- end }}
+
+{{/*
+Generate the console route hostname
+*/}}
+{{- define "minio.consoleRouteHost" -}}
+{{- if .Values.route.consoleHost }}
+{{- .Values.route.consoleHost }}
+{{- else }}
+{{- printf "%s-console" (include "minio.fullname" .) }}
+{{- end }}
+{{- end }}

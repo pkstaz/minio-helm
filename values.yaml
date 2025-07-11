@@ -84,7 +84,7 @@ readinessProbe:
 buckets:
   enabled: false
   list:
-    - name: "test-bucket"
+    - name: "rag-documents"
       policy: "upload"
       versioning: true
       notifications:

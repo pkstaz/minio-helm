@@ -65,7 +65,7 @@ spec:
               # Wait for MinIO service to be available with simpler approach
               echo "Waiting for MinIO service to be ready..."
               RETRY_COUNT=0
-              MAX_RETRIES=15
+              MAX_RETRIES=1
               
               while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
                 echo "Attempt $((RETRY_COUNT + 1))/$MAX_RETRIES: Configuring alias and testing connection..."
@@ -91,28 +91,47 @@ spec:
                 echo "=========================================="
                 echo "The bucket setup job could not automatically configure your buckets."
                 echo ""
-                echo "Connect to MinIO using:"
-                echo "  mc alias set minio ${MINIO_SERVICE_URL} ${MINIO_ROOT_USER} <password>"
+                echo "1. Connect to MinIO using mc client:"
+                echo "   mc alias set minio ${MINIO_SERVICE_URL} ${MINIO_ROOT_USER} <password>"
                 echo ""
-                echo "Required buckets to create:"
+                echo "2. Create and configure buckets:"
                 {{- range .Values.buckets.list }}
-                echo "  • {{ .name }}"
-                {{- if .policy }}
-                echo "    - Policy: {{ .policy }}"
-                {{- end }}
+                echo ""
+                echo "   # Bucket: {{ .name }}"
+                echo "   mc mb minio/{{ .name }}"
                 {{- if .versioning }}
-                echo "    - Versioning: enabled"
+                echo "   mc version enable minio/{{ .name }}"
                 {{- end }}
-                {{- if and .notifications .notifications.enabled }}
-                echo "    - Notifications: {{ join "," .notifications.events }} events"
-                {{- if .notifications.webhook }}
-                echo "    - Webhook endpoint: {{ .notifications.webhook.endpoint }}"
+                {{- if .policy }}
+                {{- if eq .policy "download" }}
+                echo "   mc anonymous set download minio/{{ .name }}"
+                {{- else if eq .policy "upload" }}
+                echo "   mc anonymous set upload minio/{{ .name }}"
+                {{- else if eq .policy "public" }}
+                echo "   mc anonymous set public minio/{{ .name }}"
+                {{- else if ne .policy "none" }}
+                echo "   mc anonymous set {{ .policy }} minio/{{ .name }}"
                 {{- end }}
+                {{- end }}
+                {{- if and .notifications .notifications.enabled .notifications.webhook }}
+                {{- $events := join "," .notifications.events }}
+                echo "   mc event add minio/{{ .name }} arn:minio:sqs::primary:webhook --event \"{{ $events }}\""
+                echo "   # Note: Configure webhook endpoint: {{ .notifications.webhook.endpoint }}"
                 {{- if .notifications.pipeline }}
-                echo "    - Target pipeline: {{ .notifications.pipeline.name }} ({{ .notifications.pipeline.namespace }})"
+                echo "   # Target pipeline: {{ .notifications.pipeline.name }} ({{ .notifications.pipeline.namespace }})"
                 {{- end }}
                 {{- end }}
                 {{- end }}
+                echo ""
+                echo "3. Verify configuration:"
+                echo "   mc ls minio/"
+                echo "   mc anonymous list minio/"
+                echo "   mc event list minio/"
+                echo ""
+                echo "4. Alternative: Use MinIO Console at the console route"
+                echo "   - Access via OpenShift route"
+                echo "   - Login with root credentials"
+                echo "   - Navigate to buckets section"
                 echo ""
                 echo "=========================================="
                 exit 1

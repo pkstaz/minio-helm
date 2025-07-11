@@ -80,6 +80,8 @@ spec:
             {{- if .Values.buckets.enabled }}
             {{- range .Values.buckets.list }}
             {{- if and .notifications .notifications.enabled .notifications.webhook }}
+            - name: MINIO_CONSOLE_PORT
+              value: "9090"
             - name: MINIO_NOTIFY_WEBHOOK_ENABLE_PRIMARY
               value: "on"
             - name: MINIO_NOTIFY_WEBHOOK_ENDPOINT_PRIMARY
